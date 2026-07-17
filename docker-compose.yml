@@ -1,0 +1,48 @@
+version: "3.8"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: inventory-service-db
+    environment:
+      POSTGRES_DB: inventory_service_db
+      POSTGRES_USER: inventory_service
+      POSTGRES_PASSWORD: inventory_service
+    ports:
+      - "5433:5432"
+    volumes:
+      - inventory_service_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U inventory_service -d inventory_service_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - services-net
+
+  inventory-service:
+    build: .
+    container_name: inventory-service
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DB_URL: jdbc:postgresql://postgres:5432/inventory_service_db
+      DB_USERNAME: inventory_service
+      DB_PASSWORD: inventory_service
+      SERVER_PORT: 8081
+    ports:
+      - "8081:8081"
+    networks:
+      - services-net
+
+volumes:
+  inventory_service_pgdata:
+
+# 'services-net' is external so both product-service and inventory-service
+# compose files can join the same network and reach each other by
+# container name if/when a synchronous call between them is ever needed.
+networks:
+  services-net:
+    name: services-net
+    external: true

@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.29.xsd">
+
+    <changeSet id="001-create-inventory-table" author="shiva">
+        <createTable tableName="inventory">
+            <column name="id" type="BIGSERIAL">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="product_id" type="BIGINT">
+                <constraints nullable="false" unique="true" uniqueConstraintName="uk_inventory_product_id"/>
+            </column>
+            <column name="sku" type="VARCHAR(64)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="quantity_on_hand" type="INTEGER">
+                <constraints nullable="false"/>
+            </column>
+            <column name="quantity_reserved" type="INTEGER" defaultValueNumeric="0">
+                <constraints nullable="false"/>
+            </column>
+            <column name="reorder_threshold" type="INTEGER" defaultValueNumeric="10">
+                <constraints nullable="false"/>
+            </column>
+            <column name="version" type="BIGINT" defaultValueNumeric="0">
+                <constraints nullable="false"/>
+            </column>
+            <column name="created_at" type="TIMESTAMPTZ" defaultValueComputed="now()">
+                <constraints nullable="false"/>
+            </column>
+            <column name="updated_at" type="TIMESTAMPTZ" defaultValueComputed="now()">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+<sql><![CDATA[
+ALTER TABLE inventory
+ADD CONSTRAINT chk_inventory_on_hand_non_negative
+CHECK (quantity_on_hand >= 0);
+]]></sql>
+
+<sql><![CDATA[
+ALTER TABLE inventory
+ADD CONSTRAINT chk_inventory_reserved_non_negative
+CHECK (quantity_reserved >= 0);
+]]></sql>
+
+<sql><![CDATA[
+ALTER TABLE inventory
+ADD CONSTRAINT chk_inventory_reserved_le_on_hand
+CHECK (quantity_reserved <= quantity_on_hand);
+]]></sql>
+
+        <createIndex tableName="inventory" indexName="idx_inventory_sku">
+            <column name="sku"/>
+        </createIndex>
+    </changeSet>
+
+</databaseChangeLog>

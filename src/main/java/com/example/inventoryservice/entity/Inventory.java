@@ -18,10 +18,10 @@ import java.time.Instant;
  * services own separate schemas and can be deployed/scaled independently.
  */
 @Entity
-@Table(
-        name = "inventory",
-        uniqueConstraints = @UniqueConstraint(name = "uk_inventory_product_id", columnNames = "product_id")
-)
+@Table(name = "inventory", uniqueConstraints = {
+        @UniqueConstraint(name = "uk_inventory_product_id", columnNames = "product_id"),
+        @UniqueConstraint(name = "uk_inventory_sku", columnNames = "sku")
+})
 @Getter
 @Setter
 @Builder
@@ -53,7 +53,8 @@ public class Inventory {
     @Builder.Default
     private Integer reorderThreshold = 10;
 
-    // Optimistic locking - stock mutations are concurrent by nature (orders, restocks, corrections).
+    // Optimistic locking - stock mutations are concurrent by nature (orders,
+    // restocks, corrections).
     @Version
     @Column(name = "version")
     private Long version;

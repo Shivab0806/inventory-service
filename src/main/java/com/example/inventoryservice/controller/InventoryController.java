@@ -38,13 +38,13 @@ public class InventoryController {
 
     @Operation(summary = "Get an inventory record by id")
     @GetMapping("/{id}")
-    public ResponseEntity<InventoryResponseDTO> getById(@PathVariable Long id) {
+    public ResponseEntity<InventoryResponseDTO> getById(@PathVariable @Min(1) Long id) {
         return ResponseEntity.ok(inventoryService.getById(id));
     }
 
     @Operation(summary = "Get an inventory record by productId")
     @GetMapping("/product/{productId}")
-    public ResponseEntity<InventoryResponseDTO> getByProductId(@PathVariable Long productId) {
+    public ResponseEntity<InventoryResponseDTO> getByProductId(@PathVariable @Min(1) Long productId) {
         return ResponseEntity.ok(inventoryService.getByProductId(productId));
     }
 
@@ -57,7 +57,8 @@ public class InventoryController {
             @RequestParam(defaultValue = "id") String sortBy,
             @RequestParam(defaultValue = "asc") String direction) {
 
-        Sort sort = Sort.by("desc".equalsIgnoreCase(direction) ? Sort.Direction.DESC : Sort.Direction.ASC, sortBy);
+        String safeSort = sanitizeSortBy(sortBy);
+        Sort sort = Sort.by("desc".equalsIgnoreCase(direction) ? Sort.Direction.DESC : Sort.Direction.ASC, safeSort);
         Pageable pageable = PageRequest.of(page, Math.min(size, 100), sort);
 
         return ResponseEntity.ok(inventoryService.search(sku, pageable));
@@ -66,7 +67,7 @@ public class InventoryController {
     @Operation(summary = "Update inventory metadata (SKU, reorder threshold) - not stock levels")
     @PutMapping("/{id}")
     public ResponseEntity<InventoryResponseDTO> update(
-            @PathVariable Long id,
+            @PathVariable @Min(1) Long id,
             @Valid @RequestBody InventoryUpdateRequestDTO request) {
         return ResponseEntity.ok(inventoryService.update(id, request));
     }
@@ -74,14 +75,14 @@ public class InventoryController {
     @Operation(summary = "Delete an inventory record")
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void delete(@PathVariable Long id) {
+    public void delete(@PathVariable @Min(1) Long id) {
         inventoryService.delete(id);
     }
 
     @Operation(summary = "Adjust on-hand quantity by a signed delta (restock, damage, correction)")
     @PostMapping("/{id}/adjust")
     public ResponseEntity<InventoryResponseDTO> adjustStock(
-            @PathVariable Long id,
+            @PathVariable @Min(1) Long id,
             @Valid @RequestBody StockAdjustmentRequestDTO request) {
         return ResponseEntity.ok(inventoryService.adjustStock(id, request));
     }
@@ -89,7 +90,7 @@ public class InventoryController {
     @Operation(summary = "Reserve stock for an order")
     @PostMapping("/{id}/reserve")
     public ResponseEntity<InventoryResponseDTO> reserveStock(
-            @PathVariable Long id,
+            @PathVariable @Min(1) Long id,
             @Valid @RequestBody StockReservationRequestDTO request) {
         return ResponseEntity.ok(inventoryService.reserveStock(id, request));
     }
@@ -97,7 +98,7 @@ public class InventoryController {
     @Operation(summary = "Release previously reserved stock back to available")
     @PostMapping("/{id}/release")
     public ResponseEntity<InventoryResponseDTO> releaseStock(
-            @PathVariable Long id,
+            @PathVariable @Min(1) Long id,
             @Valid @RequestBody StockReservationRequestDTO request) {
         return ResponseEntity.ok(inventoryService.releaseStock(id, request));
     }
@@ -105,8 +106,15 @@ public class InventoryController {
     @Operation(summary = "Fulfill a reservation - removes units from both reserved and on-hand")
     @PostMapping("/{id}/fulfill")
     public ResponseEntity<InventoryResponseDTO> fulfillReservation(
-            @PathVariable Long id,
+            @PathVariable @Min(1) Long id,
             @Valid @RequestBody StockReservationRequestDTO request) {
         return ResponseEntity.ok(inventoryService.fulfillReservation(id, request));
+    }
+
+    private String sanitizeSortBy(String sortBy) {
+        return switch (sortBy == null ? "" : sortBy) {
+            case "id", "productId", "sku", "quantityOnHand", "quantityReserved", "reorderThreshold" -> sortBy;
+            default -> "id";
+        };
     }
 }

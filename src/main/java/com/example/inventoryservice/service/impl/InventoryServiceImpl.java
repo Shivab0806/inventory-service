@@ -3,6 +3,7 @@ package com.example.inventoryservice.service.impl;
 import com.example.inventoryservice.dto.*;
 import com.example.inventoryservice.entity.Inventory;
 import com.example.inventoryservice.exception.DuplicateResourceException;
+import com.example.inventoryservice.exception.OperationNotAllowedException;
 import com.example.inventoryservice.exception.InsufficientStockException;
 import com.example.inventoryservice.exception.ResourceNotFoundException;
 import com.example.inventoryservice.mapper.InventoryMapper;
@@ -15,6 +16,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
+import java.util.Objects;
 
 @Slf4j
 @Service
@@ -28,9 +30,15 @@ public class InventoryServiceImpl implements InventoryService {
     @Override
     @Transactional
     public InventoryResponseDTO create(InventoryCreateRequestDTO request) {
+        Objects.requireNonNull(request, "request must not be null");
         if (inventoryRepository.existsByProductId(request.getProductId())) {
             throw new DuplicateResourceException(
                     "An inventory record already exists for productId " + request.getProductId());
+        }
+        // Prevent duplicate SKUs (case-insensitive) with a clear business error
+        String skuTrimmed = request.getSku() != null ? request.getSku().trim() : null;
+        if (skuTrimmed != null && inventoryRepository.findBySkuIgnoreCase(skuTrimmed).isPresent()) {
+            throw new DuplicateResourceException("An inventory record with SKU '" + skuTrimmed + "' already exists");
         }
         Inventory saved = inventoryRepository.save(inventoryMapper.toEntity(request));
         log.info("Created inventory id={} productId={} sku={}", saved.getId(), saved.getProductId(), saved.getSku());
@@ -61,13 +69,17 @@ public class InventoryServiceImpl implements InventoryService {
     @Override
     @Transactional
     public InventoryResponseDTO update(Long id, InventoryUpdateRequestDTO request) {
+        Objects.requireNonNull(request, "request must not be null");
         Inventory inventory = findOrThrow(id);
 
-        if (inventoryRepository.existsBySkuIgnoreCaseAndIdNot(request.getSku(), id)) {
-            throw new DuplicateResourceException("An inventory record with SKU '" + request.getSku() + "' already exists");
+        String skuTrimmed = request.getSku() != null ? request.getSku().trim() : null;
+        if (skuTrimmed != null && inventoryRepository.existsBySkuIgnoreCaseAndIdNot(skuTrimmed, id)) {
+            throw new DuplicateResourceException("An inventory record with SKU '" + skuTrimmed + "' already exists");
         }
 
-        inventory.setSku(request.getSku().trim());
+        if (skuTrimmed != null) {
+            inventory.setSku(skuTrimmed);
+        }
         if (request.getReorderThreshold() != null) {
             inventory.setReorderThreshold(request.getReorderThreshold());
         }
@@ -80,6 +92,11 @@ public class InventoryServiceImpl implements InventoryService {
     @Transactional
     public void delete(Long id) {
         Inventory inventory = findOrThrow(id);
+        if (inventory.getQuantityOnHand() != null && inventory.getQuantityOnHand() > 0
+                || inventory.getQuantityReserved() != null && inventory.getQuantityReserved() > 0) {
+            throw new OperationNotAllowedException(
+                    "Cannot delete inventory id " + id + " with non-zero quantities or reservations");
+        }
         inventoryRepository.delete(inventory);
         log.info("Deleted inventory id={}", id);
     }
@@ -87,17 +104,10 @@ public class InventoryServiceImpl implements InventoryService {
     @Override
     @Transactional
     public InventoryResponseDTO adjustStock(Long id, StockAdjustmentRequestDTO request) {
+        Objects.requireNonNull(request, "request must not be null");
         Inventory inventory = findForUpdateOrThrow(id);
 
-        int newOnHand = inventory.getQuantityOnHand() + request.getQuantity();
-        if (newOnHand < 0) {
-            throw new InsufficientStockException(
-                    "Adjustment of " + request.getQuantity() + " would result in negative on-hand quantity for inventory id " + id);
-        }
-        if (newOnHand < inventory.getQuantityReserved()) {
-            throw new InsufficientStockException(
-                    "Adjustment of " + request.getQuantity() + " would drop on-hand below already-reserved quantity for inventory id " + id);
-        }
+        int newOnHand = getNewOnHand(id, request, inventory);
 
         inventory.setQuantityOnHand(newOnHand);
         Inventory saved = inventoryRepository.save(inventory);
@@ -106,9 +116,25 @@ public class InventoryServiceImpl implements InventoryService {
         return inventoryMapper.toResponseDto(saved);
     }
 
+    private static int getNewOnHand(Long id, StockAdjustmentRequestDTO request, Inventory inventory) {
+        int newOnHand = inventory.getQuantityOnHand() + request.getQuantity();
+        if (newOnHand < 0) {
+            throw new InsufficientStockException(
+                    "Adjustment of " + request.getQuantity()
+                            + " would result in negative on-hand quantity for inventory id " + id);
+        }
+        if (newOnHand < inventory.getQuantityReserved()) {
+            throw new InsufficientStockException(
+                    "Adjustment of " + request.getQuantity()
+                            + " would drop on-hand below already-reserved quantity for inventory id " + id);
+        }
+        return newOnHand;
+    }
+
     @Override
     @Transactional
     public InventoryResponseDTO reserveStock(Long id, StockReservationRequestDTO request) {
+        Objects.requireNonNull(request, "request must not be null");
         Inventory inventory = findForUpdateOrThrow(id);
 
         int available = inventory.getQuantityAvailable();
@@ -120,13 +146,15 @@ public class InventoryServiceImpl implements InventoryService {
 
         inventory.setQuantityReserved(inventory.getQuantityReserved() + request.getQuantity());
         Inventory saved = inventoryRepository.save(inventory);
-        log.info("Reserved {} units for inventory id={} reference='{}'", request.getQuantity(), id, request.getReference());
+        log.info("Reserved {} units for inventory id={} reference='{}'", request.getQuantity(), id,
+                request.getReference());
         return inventoryMapper.toResponseDto(saved);
     }
 
     @Override
     @Transactional
     public InventoryResponseDTO releaseStock(Long id, StockReservationRequestDTO request) {
+        Objects.requireNonNull(request, "request must not be null");
         Inventory inventory = findForUpdateOrThrow(id);
 
         if (request.getQuantity() > inventory.getQuantityReserved()) {
@@ -137,13 +165,15 @@ public class InventoryServiceImpl implements InventoryService {
 
         inventory.setQuantityReserved(inventory.getQuantityReserved() - request.getQuantity());
         Inventory saved = inventoryRepository.save(inventory);
-        log.info("Released {} units for inventory id={} reference='{}'", request.getQuantity(), id, request.getReference());
+        log.info("Released {} units for inventory id={} reference='{}'", request.getQuantity(), id,
+                request.getReference());
         return inventoryMapper.toResponseDto(saved);
     }
 
     @Override
     @Transactional
     public InventoryResponseDTO fulfillReservation(Long id, StockReservationRequestDTO request) {
+        Objects.requireNonNull(request, "request must not be null");
         Inventory inventory = findForUpdateOrThrow(id);
 
         if (request.getQuantity() > inventory.getQuantityReserved()) {
@@ -152,10 +182,17 @@ public class InventoryServiceImpl implements InventoryService {
                             + ": only " + inventory.getQuantityReserved() + " currently reserved");
         }
 
+        if (request.getQuantity() > inventory.getQuantityOnHand()) {
+            throw new InsufficientStockException(
+                    "Cannot fulfill " + request.getQuantity() + " units for inventory id " + id
+                            + ": only " + inventory.getQuantityOnHand() + " on-hand");
+        }
+
         inventory.setQuantityReserved(inventory.getQuantityReserved() - request.getQuantity());
         inventory.setQuantityOnHand(inventory.getQuantityOnHand() - request.getQuantity());
         Inventory saved = inventoryRepository.save(inventory);
-        log.info("Fulfilled {} units for inventory id={} reference='{}'", request.getQuantity(), id, request.getReference());
+        log.info("Fulfilled {} units for inventory id={} reference='{}'", request.getQuantity(), id,
+                request.getReference());
         return inventoryMapper.toResponseDto(saved);
     }
 

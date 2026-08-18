@@ -111,6 +111,18 @@ public class InventoryController {
         return ResponseEntity.ok(inventoryService.fulfillReservation(id, request));
     }
 
+    @Operation(summary = "Process an order cancellation or customer return. Releases reservation if not fulfilled; adds back on-hand if fulfilled.")
+    @PostMapping("/{id}/return")
+    public ResponseEntity<InventoryResponseDTO> processReturn(
+            @PathVariable @Min(1) Long id,
+            @Valid @RequestBody StockReturnRequestDTO request,
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey) {
+        if ((request.getIdempotencyKey() == null || request.getIdempotencyKey().isBlank()) && idempotencyKey != null) {
+            request.setIdempotencyKey(idempotencyKey);
+        }
+        return ResponseEntity.ok(inventoryService.processReturn(id, request));
+    }
+
     private String sanitizeSortBy(String sortBy) {
         return switch (sortBy == null ? "" : sortBy) {
             case "id", "productId", "sku", "quantityOnHand", "quantityReserved", "reorderThreshold" -> sortBy;

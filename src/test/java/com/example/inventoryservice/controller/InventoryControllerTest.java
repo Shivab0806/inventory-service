@@ -3,6 +3,7 @@ package com.example.inventoryservice.controller;
 import com.example.inventoryservice.dto.InventoryCreateRequestDTO;
 import com.example.inventoryservice.dto.InventoryResponseDTO;
 import com.example.inventoryservice.dto.StockReservationRequestDTO;
+import com.example.inventoryservice.dto.StockReturnRequestDTO;
 import com.example.inventoryservice.exception.InsufficientStockException;
 import com.example.inventoryservice.exception.ResourceNotFoundException;
 import com.example.inventoryservice.service.InventoryService;
@@ -82,6 +83,23 @@ class InventoryControllerTest {
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.status").value(409));
+    }
+
+    @Test
+    void processReturn_returns200_whenFulfilled() throws Exception {
+        StockReturnRequestDTO request = StockReturnRequestDTO.builder()
+                .quantity(5).fulfilled(true).reason("Customer return").build();
+
+        InventoryResponseDTO response = InventoryResponseDTO.builder()
+                .id(1L).productId(1L).sku("SKU-001").quantityOnHand(105).quantityAvailable(105).build();
+
+        when(inventoryService.processReturn(eq(1L), any())).thenReturn(response);
+
+        mockMvc.perform(post("/api/v1/inventory/{id}/return", 1L)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.quantityOnHand").value(105));
     }
 
     @Test

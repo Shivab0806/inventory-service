@@ -124,6 +124,43 @@ class InventoryServiceImplTest {
     }
 
     @Test
+    void processReturn_addsOnHand_whenFulfilled() {
+        when(inventoryRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(entity));
+
+        when(inventoryRepository.save(any())).thenAnswer(inv -> {
+            Inventory i = inv.getArgument(0);
+            return InventoryResponseDTO.builder()
+                    .id(i.getId()).quantityOnHand(i.getQuantityOnHand()).quantityReserved(i.getQuantityReserved())
+                    .quantityAvailable(i.getQuantityAvailable()).build();
+        });
+
+        StockReturnRequestDTO request = StockReturnRequestDTO.builder().quantity(10).fulfilled(true).reason("Return").build();
+        InventoryResponseDTO result = inventoryService.processReturn(1L, request);
+
+        assertThat(result.getQuantityOnHand()).isEqualTo(110);
+        assertThat(result.getQuantityAvailable()).isEqualTo(110 - entity.getQuantityReserved());
+    }
+
+    @Test
+    void processReturn_releasesReservation_whenNotFulfilled() {
+        entity.setQuantityReserved(20);
+        when(inventoryRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(entity));
+
+        when(inventoryRepository.save(any())).thenAnswer(inv -> {
+            Inventory i = inv.getArgument(0);
+            return InventoryResponseDTO.builder()
+                    .id(i.getId()).quantityOnHand(i.getQuantityOnHand()).quantityReserved(i.getQuantityReserved())
+                    .quantityAvailable(i.getQuantityAvailable()).build();
+        });
+
+        StockReturnRequestDTO request = StockReturnRequestDTO.builder().quantity(5).fulfilled(false).reference("ORDER-1").build();
+        InventoryResponseDTO result = inventoryService.processReturn(1L, request);
+
+        assertThat(result.getQuantityReserved()).isEqualTo(15);
+        assertThat(result.getQuantityAvailable()).isEqualTo(result.getQuantityOnHand() - 15);
+    }
+
+    @Test
     void releaseStock_throwsInsufficientStockException_whenReleasingMoreThanReserved() {
         entity.setQuantityReserved(10);
         when(inventoryRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(entity));

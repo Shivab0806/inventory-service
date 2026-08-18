@@ -196,6 +196,31 @@ public class InventoryServiceImpl implements InventoryService {
         return inventoryMapper.toResponseDto(saved);
     }
 
+    @Override
+    @Transactional
+    public InventoryResponseDTO processReturn(Long id, StockReturnRequestDTO request) {
+        Objects.requireNonNull(request, "request must not be null");
+
+        // Log idempotency key if provided (basic support; callers may use for de-duplication)
+        if (request.getIdempotencyKey() != null && !request.getIdempotencyKey().isBlank()) {
+            log.info("Processing return id={} idempotencyKey={}", id, request.getIdempotencyKey());
+        }
+
+        if (Boolean.TRUE.equals(request.getFulfilled())) {
+            StockAdjustmentRequestDTO adjust = StockAdjustmentRequestDTO.builder()
+                    .quantity(request.getQuantity())
+                    .reason(request.getReason())
+                    .build();
+            return adjustStock(id, adjust);
+        } else {
+            StockReservationRequestDTO release = StockReservationRequestDTO.builder()
+                    .quantity(request.getQuantity())
+                    .reference(request.getReference())
+                    .build();
+            return releaseStock(id, release);
+        }
+    }
+
     private Inventory findOrThrow(Long id) {
         return inventoryRepository.findById(id)
                 .orElseThrow(() -> ResourceNotFoundException.forId("Inventory", id));
